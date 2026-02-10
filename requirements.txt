@@ -1,7 +1,5 @@
-yfinance==0.2.38
 pandas==2.2.0
 requests==2.31.0
 ta
 pytelegrambotapi
 groq
-alpha-vantage
