@@ -6,11 +6,12 @@ from groq import Groq
 import telebot
 import os
 from datetime import datetime
+import time
 
-# 📊 TAKİP EDİLECEK HİSSELER (İstediğin gibi değiştirebilirsin)
+# 📊 TAKİP EDİLECEK HİSSELER
 WATCHLIST = ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'TSLA']
 
-# 🔑 API Bilgileri (GitHub Secrets'tan gelecek)
+# 🔑 API Bilgileri
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
@@ -23,15 +24,32 @@ def fetch_stock_data(symbol):
     """Hisse verilerini çek ve teknik göstergeleri hesapla"""
     print(f"📥 {symbol} verisi çekiliyor...")
     
-    stock = yf.Ticker(symbol)
-    df = stock.history(period='3mo', interval='1d')
-    
-    # Teknik göstergeler - ta kütüphanesi ile
-    df['RSI'] = RSIIndicator(close=df['Close'], window=14).rsi()
-    df['SMA_20'] = SMAIndicator(close=df['Close'], window=20).sma_indicator()
-    df['SMA_50'] = SMAIndicator(close=df['Close'], window=50).sma_indicator()
-    
-    return df
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            # yfinance session ayarları
+            stock = yf.Ticker(symbol)
+            
+            # Veriyi çek
+            df = stock.history(period='3mo', interval='1d', timeout=10)
+            
+            if df.empty:
+                raise Exception("Veri boş geldi")
+            
+            # Teknik göstergeler
+            df['RSI'] = RSIIndicator(close=df['Close'], window=14).rsi()
+            df['SMA_20'] = SMAIndicator(close=df['Close'], window=20).sma_indicator()
+            df['SMA_50'] = SMAIndicator(close=df['Close'], window=50).sma_indicator()
+            
+            print(f"✅ {symbol} verisi başarıyla çekildi")
+            return df
+            
+        except Exception as e:
+            print(f"⚠️ {symbol} deneme {attempt + 1}/{max_retries}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2)  # 2 saniye bekle
+            else:
+                raise Exception(f"3 denemeden sonra veri çekilemedi: {e}")
 
 def generate_signals(df):
     """Teknik sinyalleri tespit et"""
@@ -40,21 +58,23 @@ def generate_signals(df):
     signals = []
     
     # RSI Analizi
-    if latest['RSI'] < 30:
-        signals.append(f"🟢 RSI aşırı satım bölgesinde: {latest['RSI']:.1f} (Alım fırsatı olabilir)")
-    elif latest['RSI'] > 70:
-        signals.append(f"🔴 RSI aşırı alım bölgesinde: {latest['RSI']:.1f} (Düzeltme gelebilir)")
-    else:
-        signals.append(f"⚪ RSI nötr: {latest['RSI']:.1f}")
+    if pd.notna(latest['RSI']):
+        if latest['RSI'] < 30:
+            signals.append(f"🟢 RSI aşırı satım bölgesinde: {latest['RSI']:.1f} (Alım fırsatı olabilir)")
+        elif latest['RSI'] > 70:
+            signals.append(f"🔴 RSI aşırı alım bölgesinde: {latest['RSI']:.1f} (Düzeltme gelebilir)")
+        else:
+            signals.append(f"⚪ RSI nötr: {latest['RSI']:.1f}")
     
     # Moving Average Trend
-    if latest['Close'] > latest['SMA_50']:
-        if latest['Close'] > latest['SMA_20']:
-            signals.append("📈 Güçlü yükseliş trendi (20 ve 50 MA üstünde)")
+    if pd.notna(latest['SMA_50']) and pd.notna(latest['SMA_20']):
+        if latest['Close'] > latest['SMA_50']:
+            if latest['Close'] > latest['SMA_20']:
+                signals.append("📈 Güçlü yükseliş trendi (20 ve 50 MA üstünde)")
+            else:
+                signals.append("📊 Yükseliş trendi devam ediyor (50 MA üstünde)")
         else:
-            signals.append("📊 Yükseliş trendi devam ediyor (50 MA üstünde)")
-    else:
-        signals.append("📉 Fiyat 50 MA altında (zayıf trend)")
+            signals.append("📉 Fiyat 50 MA altında (zayıf trend)")
     
     # Hacim Analizi
     avg_volume = df['Volume'].tail(20).mean()
@@ -78,9 +98,9 @@ Günlük Değişim: {change_pct:+.2f}%
 Hacim: {latest['Volume']:,.0f}
 
 Teknik Göstergeler:
-- RSI (14): {latest['RSI']:.2f}
-- Fiyat/SMA20: ${latest['Close']:.2f} / ${latest['SMA_20']:.2f}
-- Fiyat/SMA50: ${latest['Close']:.2f} / ${latest['SMA_50']:.2f}
+- RSI (14): {latest['RSI']:.2f if pd.notna(latest['RSI']) else 'N/A'}
+- Fiyat/SMA20: ${latest['Close']:.2f} / ${latest['SMA_20']:.2f if pd.notna(latest['SMA_20']) else 'N/A'}
+- Fiyat/SMA50: ${latest['Close']:.2f} / ${latest['SMA_50']:.2f if pd.notna(latest['SMA_50']) else 'N/A'}
 
 Tespit Edilen Sinyaller:
 {chr(10).join('• ' + s for s in signals)}
@@ -94,14 +114,16 @@ Lütfen şu formatta 100 kelimeyi geçmeyecek şekilde analiz yap:
 
 Türkçe yaz, net ol, abartma."""
 
-    response = groq_client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="llama-3.1-70b-versatile",
-        temperature=0.3,
-        max_tokens=400
-    )
-    
-    return response.choices[0].message.content
+    try:
+        response = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.1-70b-versatile",
+            temperature=0.3,
+            max_tokens=400
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"AI analizi yapılamadı: {e}"
 
 def create_report(symbol, df):
     """Tek bir hisse için rapor oluştur"""
@@ -148,9 +170,12 @@ def main():
             
             print(f"✅ {symbol} tamamlandı")
             
+            # Rate limit için bekleme
+            time.sleep(1)
+            
         except Exception as e:
             print(f"❌ {symbol} hatası: {e}")
-            all_reports.append(f"❌ *{symbol}*: Veri çekilemedi")
+            all_reports.append(f"❌ *{symbol}*: Veri çekilemedi - {str(e)[:50]}")
     
     # Telegram'a gönder
     header = f"""
