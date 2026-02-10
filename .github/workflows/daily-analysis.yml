@@ -1,4 +1,5 @@
 name: Daily Nasdaq Analysis
+
 on:
   schedule:
     - cron: '0 18 * * *'
@@ -20,8 +21,6 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pandas==2.2.0 numpy
-          pip install pandas_ta==0.3.14b0
           pip install -r requirements.txt
       
       - name: Run bot
