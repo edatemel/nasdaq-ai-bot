@@ -2,10 +2,7 @@ name: Daily Nasdaq Analysis
 
 on:
   schedule:
-    # Her gün 21:00 (UTC 18:00 = Türkiye 21:00)
     - cron: '0 18 * * *'
-  
-  # Manuel çalıştırma için
   workflow_dispatch:
 
 jobs:
@@ -13,39 +10,22 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout kod
-      uses: actions/checkout@v3
-    
-    - name: Python kur
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    
-    - name: Bağımlılıkları yükle
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements.txt
-    
-    - name: Botu çalıştır
-      env:
-        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      run: python stock_bot.py
-```
-
-**4.** **"Commit changes..."** → **"Commit changes"**
-
----
-
-## ✅ Kontrol
-
-Dosya oluştuktan sonra repository'de şu yapıyı göreceksin:
-```
-nasdaq-ai-bot/
-├── .github/               ← Bu klasör oluşacak
-│   └── workflows/
-│       └── daily-analysis.yml
-├── README.md
-├── requirements.txt
-└── stock_bot.py
+      - name: Checkout
+        uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python stock_bot.py
