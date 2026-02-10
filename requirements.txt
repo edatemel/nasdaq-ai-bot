@@ -1,0 +1,5 @@
+yfinance==0.2.38
+pandas==2.2.0
+pandas-ta==0.3.14b
+groq==0.4.2
+pyTelegramBotAPI==4.14.0
