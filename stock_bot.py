@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
+from ta.momentum import RSIIndicator
+from ta.trend import SMAIndicator
 from groq import Groq
 import telebot
 import os
@@ -25,10 +26,10 @@ def fetch_stock_data(symbol):
     stock = yf.Ticker(symbol)
     df = stock.history(period='3mo', interval='1d')
     
-    # Teknik göstergeler
-    df['RSI'] = ta.rsi(df['Close'], length=14)
-    df['SMA_20'] = ta.sma(df['Close'], length=20)
-    df['SMA_50'] = ta.sma(df['Close'], length=50)
+    # Teknik göstergeler - ta kütüphanesi ile
+    df['RSI'] = RSIIndicator(close=df['Close'], window=14).rsi()
+    df['SMA_20'] = SMAIndicator(close=df['Close'], window=20).sma_indicator()
+    df['SMA_50'] = SMAIndicator(close=df['Close'], window=50).sma_indicator()
     
     return df
 
