@@ -1,4 +1,4 @@
-import yfinance as yf
+import requests
 import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import SMAIndicator
@@ -15,41 +15,52 @@ WATCHLIST = ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'TSLA']
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+ALPHA_VANTAGE_KEY = os.getenv('ALPHA_VANTAGE_KEY')
 
 # 🤖 Bot ve AI istemcileri
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 def fetch_stock_data(symbol):
-    """Hisse verilerini çek ve teknik göstergeleri hesapla"""
+    """Alpha Vantage ile hisse verilerini çek"""
     print(f"📥 {symbol} verisi çekiliyor...")
     
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            # yfinance session ayarları
-            stock = yf.Ticker(symbol)
-            
-            # Veriyi çek
-            df = stock.history(period='3mo', interval='1d', timeout=10)
-            
-            if df.empty:
-                raise Exception("Veri boş geldi")
-            
-            # Teknik göstergeler
-            df['RSI'] = RSIIndicator(close=df['Close'], window=14).rsi()
-            df['SMA_20'] = SMAIndicator(close=df['Close'], window=20).sma_indicator()
-            df['SMA_50'] = SMAIndicator(close=df['Close'], window=50).sma_indicator()
-            
-            print(f"✅ {symbol} verisi başarıyla çekildi")
-            return df
-            
-        except Exception as e:
-            print(f"⚠️ {symbol} deneme {attempt + 1}/{max_retries}: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(2)  # 2 saniye bekle
-            else:
-                raise Exception(f"3 denemeden sonra veri çekilemedi: {e}")
+    try:
+        # Alpha Vantage API
+        url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&outputsize=compact&apikey={ALPHA_VANTAGE_KEY}'
+        
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        if 'Time Series (Daily)' not in data:
+            raise Exception(f"API hatası: {data.get('Note', data.get('Error Message', 'Bilinmeyen hata'))}")
+        
+        # DataFrame'e dönüştür
+        df = pd.DataFrame.from_dict(data['Time Series (Daily)'], orient='index')
+        df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
+        
+        # Sütun isimlerini düzenle
+        df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        df = df.astype(float)
+        
+        # Son 90 günü al
+        df = df.tail(90)
+        
+        if df.empty:
+            raise Exception("Veri boş geldi")
+        
+        # Teknik göstergeler
+        df['RSI'] = RSIIndicator(close=df['Close'], window=14).rsi()
+        df['SMA_20'] = SMAIndicator(close=df['Close'], window=20).sma_indicator()
+        df['SMA_50'] = SMAIndicator(close=df['Close'], window=50).sma_indicator()
+        
+        print(f"✅ {symbol} verisi başarıyla çekildi ({len(df)} günlük veri)")
+        return df
+        
+    except Exception as e:
+        print(f"❌ {symbol} veri hatası: {e}")
+        raise
 
 def generate_signals(df):
     """Teknik sinyalleri tespit et"""
@@ -159,8 +170,13 @@ def main():
     
     all_reports = []
     
-    for symbol in WATCHLIST:
+    for i, symbol in enumerate(WATCHLIST):
         try:
+            # API rate limit için bekleme (Alpha Vantage: 5 call/min free plan)
+            if i > 0:
+                print(f"⏳ Rate limit için 12 saniye bekleniyor...")
+                time.sleep(12)
+            
             # Veri çek
             df = fetch_stock_data(symbol)
             
@@ -170,12 +186,9 @@ def main():
             
             print(f"✅ {symbol} tamamlandı")
             
-            # Rate limit için bekleme
-            time.sleep(1)
-            
         except Exception as e:
             print(f"❌ {symbol} hatası: {e}")
-            all_reports.append(f"❌ *{symbol}*: Veri çekilemedi - {str(e)[:50]}")
+            all_reports.append(f"❌ *{symbol}*: Veri çekilemedi")
     
     # Telegram'a gönder
     header = f"""
