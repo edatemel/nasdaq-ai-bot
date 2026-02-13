@@ -104,7 +104,7 @@ SADECE şu formatta yaz (max 80 kelime):
         print(f"🤖 {symbol} AI analizi yapılıyor...")
         response = groq_client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-70b-versatile",
+            model="llama-3.3-70b-versatile",
             temperature=0.3,
             max_tokens=250
         )
