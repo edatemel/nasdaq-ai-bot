@@ -5,4 +5,3 @@ pytelegrambotapi
 groq
 matplotlib
 pillow
-requests
