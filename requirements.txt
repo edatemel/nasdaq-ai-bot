@@ -3,3 +3,6 @@ pandas==2.2.0
 ta
 pytelegrambotapi
 groq
+matplotlib
+pillow
+requests
